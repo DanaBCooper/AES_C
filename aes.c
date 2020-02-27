@@ -12,18 +12,14 @@ u_int8_t next_round_constant(u_int8_t round, u_int8_t prev_rc){
 
 void add_key(int* state, int* key){
   u_int8_t a[4][4];
-  u_int8_t b[4][4];
   for(int i=0; i<4; i++){
     for(int j=0; j<4; j++){
-      a[i][j] = (state[i] & (0xff000000 >> (j * 8))) >> ((3-j)*8);
-      b[i][j] = (key[i] & (0xff000000 >> (j * 8))) >> ((3-j)*8);
-      a[i][j] = a[i][j] ^ b[i][j];
+      a[i][j] = (state[i] & (0xff000000 >> (j * 8))) >> ((3-j)*8) ^ (key[i] & (0xff000000 >> (j * 8))) >> ((3-j)*8);
     }
     for( int j = 0; j< 4; j++){
       state[i] = (a[i][0] << 24) + (a[i][1] << 16) + (a[i][2] << 8) + a[i][3] ;
     }
-}
-
+  }
 }
 
 
@@ -117,6 +113,8 @@ void mix_columns(int* s){
     s[j] = (s_new[j][0] << 24) + (s_new[j][1] << 16) + (s_new[j][2] << 8) + s_new[j][3] ;
   }
 }
+
+
 void next_key(int* round_key, int r_const, int* new_key){
   u_int8_t a[4][4];
   u_int8_t buffer[4];
@@ -130,16 +128,49 @@ void next_key(int* round_key, int r_const, int* new_key){
   buffer[3] = (s_box(a[3][0]) ^ a[0][3]);
   new_key[0] = ( buffer[0] << 24) + ( buffer[1] << 16) +
                 ( buffer[2] << 8) + buffer[3];
-    for(int i=1; i<4; i++){
-	    for(int j = 0; j< 4; j++){
-	    	buffer[j] = buffer[j] ^ a[i][j];
-	    }
-	    new_key[i] = ( buffer[0] << 24) + ( buffer[1] << 16) +
+  for(int i=1; i<4; i++){
+  	for(int j = 0; j< 4; j++){
+	    buffer[j] = buffer[j] ^ a[i][j];
+	}
+	new_key[i] = ( buffer[0] << 24) + ( buffer[1] << 16) +
                 ( buffer[2] << 8) + buffer[3];
-    }
+  }
+}
 
+
+void generate_round_keys(int* init_key, int keys[11][4]){
+	int round_constant = 1;
+	int temp_key[4];
+	for(int k=0; k< 4; k++){
+		keys[0][k] = init_key[k];
+	}
+	for(int i = 1; i< 11; i++){
+		round_constant = next_round_constant(i, round_constant);
+		next_key(keys[i-1], round_constant, temp_key);
+		for(int k=0; k< 4; k++){
+			keys[i][k] = temp_key[k];
+		}
+	}	
+}
+
+
+void aes_enc_with_full_keys(int keys[11][4], int* state, int* cipher){
+	add_key(state,keys[0]);
+	for(int rc = 1; rc<10; rc++){
+		sub_bytes(state);
+		shift_rows(state);
+		mix_columns(state);
+		add_key(state,keys[rc]);
+	}
+	sub_bytes(state);
+	shift_rows(state);
+	add_key(state,keys[10]);
+	for(int i =0; i< 4; i++){
+		cipher[i] = state[i];
+	}
 
 }
+
 void aes_enc(int* key, int* message, int* cipher){
   int round_key[4];
   int state[4];
@@ -177,6 +208,7 @@ void aes_enc(int* key, int* message, int* cipher){
     cipher[i] = state[i];
   }
 }
+
 int main( int argc, char* argv[] ) {
   int key[4];
   int message[4];
@@ -192,6 +224,15 @@ int main( int argc, char* argv[] ) {
   message[3] = (int)strtol("E0370734", NULL, 16);
 
   aes_enc(key,message,cipher); 
+  printf("%x \n",cipher[0]);
+  printf("%x \n",cipher[1]);
+  printf("%x \n",cipher[2]);
+  printf("%x \n",cipher[3]);
+
+  int keys[11][4];
+  generate_round_keys(key, keys);
+
+  aes_enc_with_full_keys(keys,message,cipher);
   printf("%x \n",cipher[0]);
   printf("%x \n",cipher[1]);
   printf("%x \n",cipher[2]);
