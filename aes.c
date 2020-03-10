@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-
+#include <time.h>
 
 
 u_int8_t next_round_constant(u_int8_t round, u_int8_t prev_rc){
@@ -10,15 +10,10 @@ u_int8_t next_round_constant(u_int8_t round, u_int8_t prev_rc){
   if (round >1 && prev_rc >= 80) return ((2 * prev_rc) ^ 0x1B);
 }
 
-void add_key(int* state, int* key){
-  u_int8_t a[4][4];
-  for(int i=0; i<4; i++){
-    for(int j=0; j<4; j++){
-      a[i][j] = (state[i] & (0xff000000 >> (j * 8))) >> ((3-j)*8) ^ (key[i] & (0xff000000 >> (j * 8))) >> ((3-j)*8);
-    }
-    for( int j = 0; j< 4; j++){
-      state[i] = (a[i][0] << 24) + (a[i][1] << 16) + (a[i][2] << 8) + a[i][3] ;
-    }
+void add_key(u_int8_t* state, u_int8_t* key){
+  for(int i=0; i<16; i++){
+    state[i] = state[i] ^ key[i];
+
   }
 }
 
@@ -67,94 +62,100 @@ u_int8_t s_box(u_int8_t elem){
          ^ ((elem >> 5) % 256) ^ ((elem >> 6) % 256) ^ ((elem >> 7) % 256);
 }
 
-void sub_bytes(int* s){
-  int a[4];
-  for(int i=0; i<4; i++){
-    for(int j=0; j<4; j++){
-      a[j] = (s[i] & (0xff000000 >> (j * 8))) >> ((3-j)*8);
-      a[j] = s_box(a[j]);
-    }
-    s[i] = (a[0] << 24) + (a[1] << 16) + (a[2] << 8) + a[3] ;
+void sub_bytes(u_int8_t* s){
+  for(int i=0; i<16; i++){
+    s[i] = s_box(s[i]);
   }
 
 }
 
-void shift_rows(int* s){
-  int a[4][4];
-  for(int i=0; i<4; i++){
-    for(int j=0; j<4; j++){
-      a[i][j] = (s[i] & (0xff000000 >> (j * 8))) >> ((3-j)*8);
-    }
+void shift_rows(u_int8_t* s){
+  u_int8_t a[16];
+
+  for(int i=0; i<16;i++){
+    a[i] = s[i];
   }
-  s[0] = (a[0][0] << 24) + (a[1][1] << 16) + (a[2][2] << 8) + a[3][3] ;
-  s[1] = (a[1][0] << 24) + (a[2][1] << 16) + (a[3][2] << 8) + a[0][3] ;
-  s[2] = (a[2][0] << 24) + (a[3][1] << 16) + (a[0][2] << 8) + a[1][3] ;
-  s[3] = (a[3][0] << 24) + (a[0][1] << 16) + (a[1][2] << 8) + a[2][3] ;
+
+  s[0] = a[0];
+  s[1] = a[5];
+  s[2] = a[10];
+  s[3] = a[15];
+  s[4] = s[4];
+  s[5] = a[9];
+  s[6] = a[14];
+  s[7] = a[3];
+  s[8] = a[8];
+  s[9] = a[13];
+  s[10] = a[2];
+  s[11] =a[7];
+  s[12] = a[12];
+  s[13] = a[1];
+  s[14] = a[6];
+  s[15] = a[11];
 
 }
 
-void mix_columns(int* s){
+void mix_columns(u_int8_t* s){
   u_int8_t s_new[4][4];
-  u_int8_t a[4][4];
   u_int8_t matrix[4][4] = {{2, 3 , 1 ,1}, {1,2,3,1}, {1,1,2,3}, {3,1,1,2}};
 
   for(int i=0; i<4; i++){
     for(int j=0; j<4; j++){
-      a[i][j] = (s[i] & (0xff000000 >> (j * 8))) >> ((3-j)*8);
-    }
-  }
-  for(int i=0; i<4; i++){
-    for(int j=0; j<4; j++){
-      s_new[i][j] = add_f28(mul_f28(matrix[j][0], a[i][0]), add_f28(mul_f28(matrix[j][1], a[i][1]),
-                                  add_f28(mul_f28(matrix[j][2], a[i][2]), mul_f28(matrix[j][3], a[i][3]))));
+      s_new[i][j] = add_f28(mul_f28(matrix[j][0], s[i*4]), add_f28(mul_f28(matrix[j][1], s[(i*4)+1]),
+                                  add_f28(mul_f28(matrix[j][2], s[(i*4) + 2]), mul_f28(matrix[j][3], s[(i*4) + 3]))));
     }
   }
   for( int j = 0; j< 4; j++){
-    s[j] = (s_new[j][0] << 24) + (s_new[j][1] << 16) + (s_new[j][2] << 8) + s_new[j][3] ;
+    s[j*4] = s_new[j][0];
+    s[(j*4)+1] = s_new[j][1];
+    s[(j*4)+2] = s_new[j][2];
+    s[(j*4)+3] = s_new[j][3];
   }
 }
 
 
-void next_key(int* round_key, int r_const, int* new_key){
-  u_int8_t a[4][4];
+void next_key(u_int8_t* key, int r_const, u_int8_t* new_key){
   u_int8_t buffer[4];
-  for(int i=0; i<4; i++){
-    for(int j=0; j<4; j++){
-      a[i][j] = (round_key[i] & (0xff000000 >> (j * 8))) >> ((3-j)*8);    }
-  }
-  buffer[0] =(r_const ^ s_box(a[3][1]) ^ a[0][0]);
-  buffer[1] = (s_box(a[3][2]) ^ a[0][1]);
-  buffer[2] = (s_box(a[3][3]) ^ a[0][2]);
-  buffer[3] = (s_box(a[3][0]) ^ a[0][3]);
-  new_key[0] = ( buffer[0] << 24) + ( buffer[1] << 16) +
-                ( buffer[2] << 8) + buffer[3];
+  buffer[0] =(r_const ^ s_box(key[13]) ^ key[0]);
+  buffer[1] = (s_box(key[14]) ^ key[1]);
+  buffer[2] = (s_box(key[15]) ^ key[2]);
+  buffer[3] = (s_box(key[12]) ^ key[3]);
+  new_key[0] = buffer[0];
+  new_key[1] = buffer[1];
+  new_key[2] = buffer[2];
+  new_key[3] = buffer[3];
   for(int i=1; i<4; i++){
   	for(int j = 0; j< 4; j++){
-	    buffer[j] = buffer[j] ^ a[i][j];
+	    buffer[j] = buffer[j] ^ key[(i*4) +j];
 	}
-	new_key[i] = ( buffer[0] << 24) + ( buffer[1] << 16) +
-                ( buffer[2] << 8) + buffer[3];
+  new_key[(i*4) + 0] = buffer[0];
+  new_key[(i*4) + 1] = buffer[1];
+  new_key[(i*4) + 2] = buffer[2];
+  new_key[(i*4) + 3] = buffer[3];
   }
 }
 
 
-void generate_round_keys(int* init_key, int keys[11][4]){
+void generate_round_keys(u_int8_t* init_key, u_int8_t keys[11][16]){
 	int round_constant = 1;
-	int temp_key[4];
-	for(int k=0; k< 4; k++){
-		keys[0][k] = init_key[k];
+	u_int8_t temp_key[16];
+	for(int k=0; k< 16; k++){
+		    keys[0][k] = init_key[k];
+
 	}
 	for(int i = 1; i< 11; i++){
 		round_constant = next_round_constant(i, round_constant);
 		next_key(keys[i-1], round_constant, temp_key);
-		for(int k=0; k< 4; k++){
-			keys[i][k] = temp_key[k];
+		for(int k=0; k< 16; k++){
+  		    keys[i][k] = temp_key[k];
+
 		}
-	}	
+	}
 }
 
 
-void aes_enc_with_full_keys(int keys[11][4], int* state, int* cipher){
+
+void aes_enc_with_full_keys(u_int8_t keys[11][16], u_int8_t* state, u_int8_t* cipher){
 	add_key(state,keys[0]);
 	for(int rc = 1; rc<10; rc++){
 		sub_bytes(state);
@@ -165,78 +166,83 @@ void aes_enc_with_full_keys(int keys[11][4], int* state, int* cipher){
 	sub_bytes(state);
 	shift_rows(state);
 	add_key(state,keys[10]);
-	for(int i =0; i< 4; i++){
+	for(int i =0; i< 16; i++){
 		cipher[i] = state[i];
 	}
 
 }
 
-void aes_enc(int* key, int* message, int* cipher){
-  int round_key[4];
-  int state[4];
-  int round_constant = 0;
-  int new_key[4];
-  for(int i=0; i<4; i++){
-    round_key[i] = key[i];
-    state[i] = message[i];
-  }
-  add_key(state,round_key);
-
-  for(int round_count = 1; round_count< 10; round_count++){
-    
-    sub_bytes(state);
-    shift_rows(state);
-    mix_columns(state);
-    round_constant = next_round_constant(round_count, round_constant);
-    next_key(round_key, round_constant, new_key);
-
-   for(int i=0; i<4; i++){
-      round_key[i] = new_key[i];
-    }
-  
-    add_key(state, round_key);
-  }
-  sub_bytes(state);
-  shift_rows(state);
-  round_constant = next_round_constant(10, round_constant);
-  next_key(round_key, round_constant, new_key);
-  for(int i=0; i<4; i++){
-    round_key[i] = new_key[i];
-  }
-  add_key(state, round_key);
-  for(int i=0; i<4; i++){
-    cipher[i] = state[i];
-  }
-}
 
 int main( int argc, char* argv[] ) {
-  int key[4];
-  int message[4];
-  int cipher[4];
-  key[0] = (int)strtol("2B7E1516", NULL, 16);
-  key[1] = (int)strtol("28AED2A6", NULL, 16);
-  key[2] = (int)strtol("ABF71588", NULL, 16);
-  key[3] = (int)strtol("09CF4F3C", NULL, 16);
+  u_int8_t key[16];
+  u_int8_t message[16];
+  u_int8_t cipher[16];
 
-  message[0] = (int)strtol("3243F6A8", NULL, 16);
-  message[1] = (int)strtol("885A308D", NULL, 16);
-  message[2] = (int)strtol("313198A2", NULL, 16);
-  message[3] = (int)strtol("E0370734", NULL, 16);
+  key[0] = (int)strtol("2B", NULL, 16);
+  key[1] = (int)strtol("7E", NULL, 16);
+  key[2] = (int)strtol("15", NULL, 16);
+  key[3] = (int)strtol("16", NULL, 16);
 
-  aes_enc(key,message,cipher); 
-  printf("%x \n",cipher[0]);
-  printf("%x \n",cipher[1]);
-  printf("%x \n",cipher[2]);
-  printf("%x \n",cipher[3]);
+  key[4] = (int)strtol("28", NULL, 16);
+  key[5] = (int)strtol("AE", NULL, 16);
+  key[6] = (int)strtol("D2", NULL, 16);
+  key[7] = (int)strtol("A6", NULL, 16);
 
-  int keys[11][4];
+  key[8] = (int)strtol("AB", NULL, 16);
+  key[9] = (int)strtol("F7", NULL, 16);
+  key[10] = (int)strtol("15", NULL, 16);
+  key[11] = (int)strtol("88", NULL, 16);
+
+  key[12] = (int)strtol("09", NULL, 16);
+  key[13] = (int)strtol("CF", NULL, 16);
+  key[14] = (int)strtol("4F", NULL, 16);
+  key[15] = (int)strtol("3C", NULL, 16);
+
+  message[0] = (int)strtol("32", NULL, 16);
+  message[1] = (int)strtol("43", NULL, 16);
+  message[2] = (int)strtol("F6", NULL, 16);
+  message[3] = (int)strtol("A8", NULL, 16);
+
+  message[4] = (int)strtol("88", NULL, 16);
+  message[5] = (int)strtol("5A", NULL, 16);
+  message[6] = (int)strtol("30", NULL, 16);
+  message[7] = (int)strtol("8D", NULL, 16);
+
+  message[8] = (int)strtol("31", NULL, 16);
+  message[9] = (int)strtol("31", NULL, 16);
+  message[10] = (int)strtol("98", NULL, 16);
+  message[11] = (int)strtol("A2", NULL, 16);
+
+  message[12] = (int)strtol("E0", NULL, 16);
+  message[13] = (int)strtol("37", NULL, 16);
+  message[14] = (int)strtol("07", NULL, 16);
+  message[15] = (int)strtol("34", NULL, 16);
+
+
+
+  u_int8_t keys[11][16];
   generate_round_keys(key, keys);
 
+  clock_t begin = clock();
   aes_enc_with_full_keys(keys,message,cipher);
+  clock_t end = clock();
+  double time_spent = (double) (end-begin) / CLOCKS_PER_SEC;
+  printf("Time spent %f \n",time_spent);
   printf("%x \n",cipher[0]);
   printf("%x \n",cipher[1]);
   printf("%x \n",cipher[2]);
   printf("%x \n",cipher[3]);
-
+  printf("%x \n",cipher[4]);
+  printf("%x \n",cipher[5]);
+  printf("%x \n",cipher[6]);
+  printf("%x \n",cipher[7]);
+  printf("%x \n",cipher[8]);
+  printf("%x \n",cipher[9]);
+  printf("%x \n",cipher[10]);
+  printf("%x \n",cipher[11]);
+  printf("%x \n",cipher[12]);
+  printf("%x \n",cipher[13]);
+  printf("%x \n",cipher[14]);
+  printf("%x \n",cipher[15]);
 
 }
